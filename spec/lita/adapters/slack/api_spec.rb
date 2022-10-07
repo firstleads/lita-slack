@@ -60,7 +60,7 @@ describe Lita::Adapters::Slack::API do
 
       it "raises a RuntimeError" do
         expect { subject.im_open(user_id) }.to raise_error(
-          "Slack API call to converstaions.open failed with status code 422: ''. Headers: {}"
+          "Slack API call to conversations.open failed with status code 422: ''. Headers: {}"
         )
       end
     end

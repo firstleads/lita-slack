@@ -21,7 +21,7 @@ module Lita
         end
 
         def im_open(user_id)
-          response_data = call_api("converstaions.open", user: user_id)
+          response_data = call_api("conversations.open", user: user_id)
 
           SlackIM.new(response_data["channel"]["id"], user_id)
         end
@@ -70,15 +70,33 @@ module Lita
         end
 
         def rtm_start
-          response_data = call_api("rtm.start")
+          rtm = call_api("rtm.connect")
+          rtm["ims"] = []
+          rtm["users"] = []
+          rtm["channels"] = []
+          rtm["groups"] = []
+
+          cursor = ""
+          while true
+            conversations = call_api("conversations.list?limit=1000&cursor=#{cursor}")
+            rtm["channels"] += conversations["channels"]
+            cursor = conversations["response_metadata"]["next_cursor"]
+            break if cursor.size == 0
+          end
+          while true
+            users = call_api("users.list?limit=1000&cursor=#{cursor}")
+            rtm["users"] += users["members"]
+            cursor = users["response_metadata"]["next_cursor"]
+            break if cursor.size == 0
+          end
 
           TeamData.new(
-            SlackIM.from_data_array(response_data["ims"]),
-            SlackUser.from_data(response_data["self"]),
-            SlackUser.from_data_array(response_data["users"]),
-            SlackChannel.from_data_array(response_data["channels"]) +
-              SlackChannel.from_data_array(response_data["groups"]),
-            response_data["url"],
+            SlackIM.from_data_array(rtm["ims"]),            # N -> N -- (DM[])
+            SlackUser.from_data(rtm["self"]),               # Y -> Y -- (Bot)
+            SlackUser.from_data_array(rtm["users"]),        # N -> Y -- (User[])
+            SlackChannel.from_data_array(rtm["channels"]) + # N -> Y -- (Channel[])
+              SlackChannel.from_data_array(rtm["groups"]),  # N -> Y -- (Group[])
+            rtm["url"],                                     # Y -> Y -- (string)
           )
         end
 
@@ -93,6 +111,13 @@ module Lita
             "https://slack.com/api/#{method}",
             { token: config.token }.merge(post_data)
           )
+          if response["error"] == "ratelimited"
+            sleep 60
+            response = connection.post(
+              "https://slack.com/api/#{method}",
+              { token: config.token }.merge(post_data)
+            )
+          end
 
           data = parse_response(response, method)
 
